@@ -1,0 +1,70 @@
+{
+  "name": "Hacker Den",
+  "description": "Dark retro-tech cave with CRT monitors, server racks, and a live terminal screen.",
+  "created": "2026-02-24",
+  "camera": {
+    "fov": 45,
+    "position": [0, 0.5, 6]
+  },
+  "layers": [
+    {
+      "name": "background",
+      "texture": "bg-hacker-cutout.png",
+      "z": 0,
+      "y": 0.5,
+      "opacity": 1.0,
+      "transparent": true,
+      "notes": "Hacker den interior with CRT screen cut to transparent"
+    },
+    {
+      "name": "character",
+      "type": "live2d",
+      "model": "models/Haru/Haru.model3.json",
+      "z": 2,
+      "y": 0.5,
+      "width": 2.2,
+      "height": 3.3,
+      "notes": "Haru — Live2D render-to-texture"
+    },
+    {
+      "name": "desk",
+      "texture": "bg-hacker-desk.png",
+      "z": 3,
+      "y": -0.3,
+      "opacity": 1.0,
+      "transparent": true,
+      "notes": "Foreground desk with keyboard, energy drinks, cables"
+    }
+  ],
+  "effects": {
+    "rain": {
+      "enabled": false
+    },
+    "terminal": {
+      "enabled": true,
+      "screen": {
+        "imgRect": [140, 424, 367, 612],
+        "notes": "CRT screen bounds in bg image pixels (left, top, right, bottom)"
+      },
+      "font": "monospace",
+      "fontSize": 11,
+      "color": "#33ff33",
+      "bgColor": "rgba(0,5,0,0.85)",
+      "scrollSpeed": 80
+    }
+  },
+  "assets": {
+    "background_original": "bg-hacker-den.png",
+    "background_cutout": "bg-hacker-cutout.png",
+    "foreground": "bg-hacker-desk.png"
+  },
+  "layout": {
+    "notes": "CRT monitor in left third, character center, server racks right",
+    "crt_screen_px": {
+      "left": 140,
+      "top": 424,
+      "right": 367,
+      "bottom": 612
+    }
+  }
+}
