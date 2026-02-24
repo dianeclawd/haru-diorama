@@ -1,0 +1,101 @@
+{
+  "name": "Witch's Potion Shop",
+  "description": "Cozy apothecary on a rainy night. Shelves of potions, arched window with rain, counter with spellbook and candle.",
+  "created": "2026-02-24",
+  "camera": {
+    "fov": 45,
+    "position": [0, 0.5, 6]
+  },
+  "layers": [
+    {
+      "name": "exterior",
+      "texture": "bg-exterior.png",
+      "z": -1,
+      "y": 0.5,
+      "opacity": 1.0,
+      "transparent": false
+    },
+    {
+      "name": "background",
+      "texture": "bg-scene-cutout.png",
+      "z": 0,
+      "y": 0.5,
+      "opacity": 1.0,
+      "transparent": true,
+      "notes": "Interior with window panes cut to transparent. Rain shows through."
+    },
+    {
+      "name": "character",
+      "type": "live2d",
+      "model": "models/Haru/Haru.model3.json",
+      "z": 2,
+      "y": 0.5,
+      "width": 2.2,
+      "height": 3.3,
+      "notes": "Haru — Live2D render-to-texture"
+    },
+    {
+      "name": "counter",
+      "texture": "bg-foreground-v2.png",
+      "z": 3,
+      "y": 0.8,
+      "opacity": 1.0,
+      "transparent": true,
+      "notes": "Front-on apothecary counter with potions, spellbook, candle, crystal ball"
+    }
+  ],
+  "effects": {
+    "rain": {
+      "enabled": true,
+      "count": 300,
+      "zRange": [-0.7, -0.3],
+      "color": "0x88aacc",
+      "size": 0.03,
+      "opacity": 0.4,
+      "speed": [0.02, 0.05],
+      "wind": 0.1
+    }
+  },
+  "assets": {
+    "background_original": "bg-scene.png",
+    "exterior": "bg-exterior.png",
+    "foreground_v1": "bg-foreground.png",
+    "foreground_v2": "bg-foreground-v2.png",
+    "redline": "redline.png",
+    "alternatives": [
+      "bg-witch-shop.png",
+      "bg-witch-books.png",
+      "bg-witch-grand.png",
+      "bg-witch-greenhouse.png"
+    ]
+  },
+  "layout": {
+    "notes": "Data-driven from Haru's runtime bounds",
+    "haru_bounds_pct": {
+      "top": 30.4,
+      "waist": 68.7,
+      "bottom": 115.4,
+      "left": 32.2,
+      "right": 57.8,
+      "centerX": 45.0
+    },
+    "window_panes": {
+      "crop_offset": [950, 20],
+      "crop_size": [500, 730],
+      "mullion_vertical": 235,
+      "mullion_horizontals": [230, 365, 500, 635],
+      "panes": [
+        {"name": "A1", "rect": [125, 130, 230, 225]},
+        {"name": "A2", "rect": [240, 130, 350, 225]},
+        {"name": "B1", "rect": [125, 235, 230, 360]},
+        {"name": "B2", "rect": [240, 235, 350, 360]},
+        {"name": "C1", "rect": [125, 370, 230, 495]},
+        {"name": "C2", "rect": [240, 370, 350, 495]},
+        {"name": "D1", "rect": [125, 505, 230, 630]},
+        {"name": "D2", "rect": [240, 505, 350, 630]},
+        {"name": "E1", "rect": [125, 640, 230, 725]},
+        {"name": "E2", "rect": [240, 640, 350, 725]}
+      ]
+    }
+  }
+}

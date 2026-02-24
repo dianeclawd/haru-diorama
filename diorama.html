@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { margin: 0; overflow: hidden; background: #0a0a14; }
+    canvas { display: block; }
+    #controls {
+      position: fixed; top: 10px; left: 10px; z-index: 100;
+      display: flex; flex-wrap: wrap; gap: 6px; max-width: 600px;
+    }
+    #controls button {
+      padding: 4px 10px; font-size: 12px;
+      background: #333; color: #fff; border: 1px solid #555;
+      cursor: pointer; border-radius: 3px;
+    }
+    #controls button:hover { background: #555; }
+    #info {
+      position: fixed; bottom: 10px; left: 10px; z-index: 100;
+      color: #666; font: 11px monospace;
+    }
+    /* Layer editor panel */
+    #layer-panel {
+      position: fixed; top: 10px; right: 60px; z-index: 100;
+      background: rgba(20,20,30,0.92); border: 1px solid #444;
+      border-radius: 6px; padding: 10px; font: 11px monospace; color: #ccc;
+      max-height: 90vh; overflow-y: auto; min-width: 240px;
+      display: none;
+    }
+    #layer-panel.open { display: block; }
+    #layer-panel h3 { margin: 0 0 8px; color: #8af; font-size: 12px; }
+    .layer-group { margin-bottom: 10px; padding: 6px; background: rgba(255,255,255,0.04); border-radius: 4px; }
+    .layer-group .layer-name { color: #fa4; font-weight: bold; margin-bottom: 4px; }
+    .layer-group label { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+    .layer-group input[type=range] { flex: 1; accent-color: #8af; }
+    .layer-group .val { min-width: 40px; text-align: right; color: #8f8; }
+    #layer-panel button.export-btn {
+      margin-top: 8px; padding: 5px 12px; background: #284; color: #8f8;
+      border: 1px solid #4a6; border-radius: 3px; cursor: pointer; font: 11px monospace; width: 100%;
+    }
+    #layer-panel button.export-btn:hover { background: #3a6; }
+    #toggle-panel {
+      position: fixed; top: 10px; right: 10px; z-index: 101;
+      padding: 4px 10px; font-size: 12px;
+      background: #335; color: #8af; border: 1px solid #558;
+      border-radius: 3px; cursor: pointer; font-family: monospace;
+    }
+  </style>
+  <script type="module" crossorigin src="/haru-diorama/assets/diorama-tnH4Dwqg.js"></script>
+</head>
+<body>
+  <a href="index.html" style="position:fixed;top:40px;right:10px;z-index:100;padding:4px 12px;font-size:12px;background:#335;color:#8af;border:1px solid #558;border-radius:3px;text-decoration:none;font-family:monospace;cursor:pointer">← Live2D</a>
+  <button id="toggle-panel" onclick="document.getElementById('layer-panel').classList.toggle('open')">🎚 Layers</button>
+  <div id="layer-panel"></div>
+  <div id="controls">
+    <button onclick="resetCamera()">Reset Camera</button>
+    <button onclick="toggleWireframe()">Wireframe</button>
+    <button onclick="nudgeCamera('in')">Zoom In</button>
+    <button onclick="nudgeCamera('out')">Zoom Out</button>
+    <button onclick="nudgeCamera('left')">← Pan</button>
+    <button onclick="nudgeCamera('right')">Pan →</button>
+    <button onclick="nudgeCamera('up')">↑ Pan</button>
+    <button onclick="nudgeCamera('down')">Pan ↓</button>
+  </div>
+  <div id="info">2.5D Diorama Prototype — WASD/arrows to pan, scroll to zoom</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js"></script>
+  <script src="lib/live2dcubismcore.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
+</body>
+</html>

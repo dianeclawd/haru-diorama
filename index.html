@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diane Avatar — Live2D PoC</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { background: #1a1a2e; overflow: hidden; width: 100vw; height: 100vh; }
+    canvas { display: block; }
+    #controls {
+      position: fixed; top: 10px; left: 10px; z-index: 100;
+      font-family: monospace; color: #e0e0e0; font-size: 12px;
+    }
+    #controls button {
+      background: #333; color: #fff; border: 1px solid #555;
+      padding: 4px 8px; margin: 2px; cursor: pointer; font-family: monospace; font-size: 11px;
+    }
+    #controls button:hover { background: #555; }
+    #controls button.active { background: #7b5ea7; border-color: #a78bfa; }
+    #state-label { color: #a78bfa; font-size: 14px; margin-bottom: 6px; }
+    #log { position: fixed; bottom: 10px; left: 10px; color: #555; font-family: monospace; font-size: 9px; max-height: 60px; overflow-y: auto; opacity: 0.6; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <a href="diorama.html" style="position:fixed;top:10px;right:10px;z-index:100;padding:4px 12px;font-size:12px;background:#335;color:#8af;border:1px solid #558;border-radius:3px;text-decoration:none;font-family:monospace;cursor:pointer">🎭 Diorama →</a>
+  <div id="controls">
+    <div id="state-label">State: loading...</div>
+    <div>
+      <button onclick="setState('idle')" class="active">Idle</button>
+      <button onclick="setState('thinking')">Thinking</button>
+      <button onclick="setState('speaking')">Speaking</button>
+      <button onclick="setState('sleeping')">Sleeping</button>
+      <button onclick="setState('waving')">Waving</button>
+    </div>
+    <div style="margin-top:4px">
+      <button onclick="setState('excited')">Excited</button>
+      <button onclick="setState('sad')">Sad</button>
+      <button onclick="setState('embarrassed')">Embarrassed</button>
+      <button onclick="setState('suspicious')">Suspicious</button>
+      <button onclick="setState('crying')">Crying</button>
+    </div>
+    <div style="margin-top:4px">
+      <button onclick="setState('flirty')">Flirty</button>
+      <button onclick="setState('bored')">Bored</button>
+      <button onclick="setState('shocked')">Shocked</button>
+      <button onclick="setState('laughing')">Laughing</button>
+      <button onclick="setState('listening')">Listening</button>
+    </div>
+    <div style="margin-top:6px">
+      <button onclick="playExpression(0)">Expr 1</button>
+      <button onclick="playExpression(1)">Expr 2</button>
+      <button onclick="playExpression(2)">Expr 3</button>
+      <button onclick="playExpression(3)">Expr 4</button>
+      <button onclick="playExpression(4)">Expr 5</button>
+      <button onclick="playExpression(5)">Expr 6</button>
+      <button onclick="playExpression(6)">Expr 7</button>
+      <button onclick="playExpression(7)">Expr 8</button>
+    </div>
+    <div style="margin-top:6px">
+      <button onclick="playRandomMotion()">Random Motion</button>
+      <button onclick="toggleLipSync()">Toggle Lip Sync</button>
+    </div>
+    <div style="margin-top:6px">
+      <button onclick="location.reload()" style="background:#922;border-color:#c44">⟳ Refresh</button>
+      <button onclick="toggleLayoutDebug()" id="layout-btn" style="background:#295;border-color:#4a5">📐 Layout</button>
+    </div>
+    <div id="ws-status" style="margin-top:6px;color:#666">WS: disconnected</div>
+  </div>
+  <div id="log"></div>
+
+  <!-- Cubism Core -->
+  <script src="lib/live2dcubismcore.min.js"></script>
+
+  <!-- PixiJS v6 (compatible with pixi-live2d-display 0.4.x) -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js"></script>
+
+  <!-- pixi-live2d-display (Cubism 4 bundle) -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
+
+  <script>
+    const { Application, Sprite, Texture } = PIXI;
+    const { Live2DModel } = PIXI.live2d;
+
+    const MODEL_PATH = 'models/Haru/Haru.model3.json';
+
+    let app, model;
+    let currentState = 'idle';
+    let lipSyncActive = false;
+    let lipSyncPhase = 0;
+    // Persistent parameter overrides applied every frame
+    let paramOverrides = {};
+
+    function log(msg) {
+      console.log(msg);
+      const el = document.getElementById('log');
+      el.textContent = msg + '\n' + el.textContent.slice(0, 500);
+    }
+
+    async function init() {
+      log('Creating PixiJS app...');
+      app = new Application({
+        view: document.createElement('canvas'),
+        width: window.innerWidth,
+        height: window.innerHeight,
+        backgroundColor: 0x1a1a2e,
+        antialias: true,
+        autoDensity: true,
+        resolution: window.devicePixelRatio || 1,
+      });
+      document.body.appendChild(app.view);
+
+      // ── Background Layers (composited) ──
+      log('Loading background layers...');
+      const BG_W = 1536, BG_H = 1024;
+      
+      // Layer 0: Exterior (rainy night sky — visible through window)
+      const extTexture = Texture.from('bg-exterior.png');
+      const extSprite = new Sprite(extTexture);
+      extSprite.name = 'exterior';
+      app.stage.addChild(extSprite);
+      
+      // Layer 2: Interior with transparent window panes
+      const bgTexture = Texture.from('bg-scene-cutout.png');
+      const bgSprite = new Sprite(bgTexture);
+      bgSprite.name = 'interior';
+      app.stage.addChild(bgSprite);
+
+      // Function to scale/position both bg layers identically (cover screen)
+      function getBgLayout() {
+        const sw = app.screen.width;
+        const sh = app.screen.height;
+        const bgScale = Math.max(sw / BG_W, sh / BG_H);
+        const x = (sw - BG_W * bgScale) / 2;
+        const y = (sh - BG_H * bgScale) / 2;
+        return { bgScale, x, y };
+      }
+      
+      function layoutBackground() {
+        const { bgScale, x, y } = getBgLayout();
+        // Exterior
+        extSprite.scale.set(bgScale);
+        extSprite.x = x; extSprite.y = y;
+        // Interior (same position — pane cutouts reveal exterior behind)
+        bgSprite.scale.set(bgScale);
+        bgSprite.x = x; bgSprite.y = y;
+      }
+      layoutBackground();
+
+      log('Loading Live2D model...');
+      try {
+        model = await Live2DModel.from(MODEL_PATH, { autoInteract: true });
+      } catch(e) {
+        log('ERROR loading model: ' + e.message);
+        return;
+      }
+
+      // Scale & position — desk hides below waist
+      model.anchor.set(0.5, 0.5);
+      
+      const DESK_Y = 0.72;    // desk line (% of screen height)
+      const GROUND_Y = 0.95;  // ground/feet level (% of screen height)
+      
+      function layoutModel() {
+        const sw = app.screen.width;
+        const sh = app.screen.height;
+        const deskPx = sh * DESK_Y;
+        
+        // Simple approach: scale her so she's tall, then position
+        // so the desk line crosses her at waist level.
+        // 
+        // With anchor(0.5, 0.5), model.y is her CENTER.
+        // Her top = model.y - (scaledH/2)
+        // Her waist ≈ model.y - (scaledH/2) + scaledH*0.42 = model.y - scaledH*0.08
+        // We want waist = deskPx:
+        //   model.y - scaledH*0.08 = deskPx
+        //   model.y = deskPx + scaledH*0.08
+        
+        const scale = (sh * 1.0) / model.height; // scale up so she feels closer
+        model.scale.set(scale);
+        const scaledH = model.height * scale;
+        
+        model.x = sw * 0.45;
+        model.y = deskPx + scaledH * 0.08;
+      }
+      layoutModel();
+
+      // Enable z-index sorting so foreground renders in front of Live2D
+      app.stage.sortableChildren = true;
+      extSprite.zIndex = 0;   // exterior sky (behind everything)
+      bgSprite.zIndex = 3;    // interior with cutout panes (rain shows through)
+      model.zIndex = 10;
+      
+      app.stage.addChild(model);
+
+      // ── Rain Particle System (between exterior and interior layers) ──
+      const rainContainer = new PIXI.Container();
+      rainContainer.zIndex = 1; // between exterior (0) and interior cutout (3)
+      app.stage.addChild(rainContainer);
+      
+      const RAIN_COUNT = 80;
+      const rainDrops = [];
+      
+      // Window pane positions in source image coords (1536x1024)
+      // These map to the transparent cutouts in bg-interior-cutout.png
+      // Window pane bounds in source image coords (bg-scene 1536x1024)
+      // Crop offset (950,20), panes span x:125-350 y:105-725 in crop
+      function getWindowBounds() {
+        const { bgScale, x, y } = getBgLayout();
+        return {
+          x: x + (950 + 125) * bgScale,
+          y: y + (20 + 105) * bgScale,
+          w: 225 * bgScale,
+          h: 620 * bgScale,
+          scale: bgScale, ox: x, oy: y
+        };
+      }
+      
+      function initRain() {
+        rainContainer.removeChildren();
+        rainDrops.length = 0;
+        const wb = getWindowBounds();
+        
+        for (let i = 0; i < RAIN_COUNT; i++) {
+          const g = new PIXI.Graphics();
+          const isFar = Math.random() > 0.5;
+          const len = isFar ? 3 + Math.random() * 5 : 6 + Math.random() * 8;
+          const alpha = isFar ? 0.2 + Math.random() * 0.15 : 0.3 + Math.random() * 0.2;
+          const speed = isFar ? 1.5 + Math.random() * 1.5 : 3 + Math.random() * 3;
+          const color = isFar ? 0x6688aa : 0x88aacc;
+          
+          g.lineStyle(isFar ? 1 : 1.5, color, alpha);
+          g.moveTo(0, 0);
+          g.lineTo(-1.5, len);
+          
+          g.x = wb.x + Math.random() * wb.w;
+          g.y = wb.y + Math.random() * wb.h;
+          
+          rainContainer.addChild(g);
+          rainDrops.push({ g, speed, len, isFar });
+        }
+      }
+      initRain();
+      
+      app.ticker.add(() => {
+        const wb = getWindowBounds();
+        for (const drop of rainDrops) {
+          drop.g.y += drop.speed;
+          drop.g.x -= drop.speed * 0.1;
+          if (drop.g.y > wb.y + wb.h) {
+            drop.g.y = wb.y - drop.len;
+            drop.g.x = wb.x + Math.random() * wb.w;
+          }
+          if (drop.g.x < wb.x - 10) {
+            drop.g.x = wb.x + wb.w;
+          }
+        }
+      });
+
+      // ── Foreground Counter Layer (generated pixel art with transparency) ──
+      const fgTexture = Texture.from('bg-foreground-v2.png');
+      const fgSprite = new Sprite(fgTexture);
+      fgSprite.name = 'foreground-counter';
+      fgSprite.zIndex = 20;
+      app.stage.addChild(fgSprite);
+      
+      function layoutForeground() {
+        const { bgScale, x, y } = getBgLayout();
+        const sw = app.screen.width;
+        const sh = app.screen.height;
+        // Scale counter smaller than background so it feels at same depth as Haru
+        const fgScale = bgScale * 0.75;
+        fgSprite.scale.set(fgScale);
+        // Center horizontally
+        fgSprite.x = (sw - 1536 * fgScale) / 2;
+        // Align counter surface (row 572) to Haru's waist (69% of screen)
+        const targetY = sh * 0.69;
+        fgSprite.y = targetY - 572 * fgScale;
+      }
+      layoutForeground();
+
+      // ── Layout Debug Overlay ──
+      const layoutDebug = new PIXI.Container();
+      layoutDebug.name = 'layout-debug';
+      layoutDebug.zIndex = 50;
+      layoutDebug.visible = false;
+      app.stage.addChild(layoutDebug);
+      
+      function drawLayoutDebug() {
+        layoutDebug.removeChildren();
+        const sw = app.screen.width;
+        const sh = app.screen.height;
+        const g = new PIXI.Graphics();
+        
+        // Ground level line (green)
+        const groundY = sh * GROUND_Y;
+        g.lineStyle(2, 0x4ade80, 0.8);
+        g.moveTo(0, groundY); g.lineTo(sw, groundY);
+        // Label
+        const groundLabel = new PIXI.Text('GROUND (' + Math.round(GROUND_Y*100) + '%)', {
+          fontFamily: 'monospace', fontSize: 12, fill: '#4ade80'
+        });
+        groundLabel.x = sw - 180; groundLabel.y = groundY - 16;
+        layoutDebug.addChild(groundLabel);
+        
+        // Desk level line (amber)
+        const deskLine = sh * DESK_Y;
+        g.lineStyle(2, 0xd4a048, 0.8);
+        g.moveTo(0, deskLine); g.lineTo(sw, deskLine);
+        const deskLabel = new PIXI.Text('DESK (' + Math.round(DESK_Y*100) + '%)', {
+          fontFamily: 'monospace', fontSize: 12, fill: '#d4a048'
+        });
+        deskLabel.x = sw - 160; deskLabel.y = deskLine - 16;
+        layoutDebug.addChild(deskLabel);
+        
+        // Character bounding box (purple dashed)
+        if (model) {
+          const bounds = model.getBounds();
+          g.lineStyle(2, 0xa78bfa, 0.6);
+          g.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+          
+          // Waist estimate (roughly 45% from top of character)
+          const waistY = bounds.y + bounds.height * 0.45;
+          g.lineStyle(1, 0xf87171, 0.6);
+          g.moveTo(bounds.x, waistY); g.lineTo(bounds.x + bounds.width, waistY);
+          const waistLabel = new PIXI.Text('~WAIST', {
+            fontFamily: 'monospace', fontSize: 10, fill: '#f87171'
+          });
+          waistLabel.x = bounds.x + bounds.width + 5; waistLabel.y = waistY - 6;
+          layoutDebug.addChild(waistLabel);
+          
+          // Character anchor point (feet)
+          g.lineStyle(0);
+          g.beginFill(0x4ade80); 
+          g.drawCircle(model.x, sh * GROUND_Y, 5);
+          g.endFill();
+          const feetLabel = new PIXI.Text('FEET', {
+            fontFamily: 'monospace', fontSize: 10, fill: '#4ade80'
+          });
+          feetLabel.x = model.x + 10; feetLabel.y = sh * GROUND_Y - 6;
+          layoutDebug.addChild(feetLabel);
+        }
+        
+        // Hidden zone (red shading between desk and ground)
+        g.lineStyle(0);
+        g.beginFill(0xff0000, 0.1);
+        g.drawRect(0, deskLine, sw, groundY - deskLine);
+        g.endFill();
+        const hiddenLabel = new PIXI.Text('HIDDEN BY DESK', {
+          fontFamily: 'monospace', fontSize: 11, fill: '#f87171', align: 'center'
+        });
+        hiddenLabel.x = 10; hiddenLabel.y = deskLine + 5;
+        layoutDebug.addChild(hiddenLabel);
+        
+        layoutDebug.addChild(g);
+      }
+      
+      window.toggleLayoutDebug = function() {
+        layoutDebug.visible = !layoutDebug.visible;
+        if (layoutDebug.visible) drawLayoutDebug();
+        // Hide all scene layers so debug lines are visible
+        extSprite.visible = !layoutDebug.visible;
+        bgSprite.visible = !layoutDebug.visible;
+        rainContainer.visible = !layoutDebug.visible;
+        fgSprite.visible = !layoutDebug.visible;
+        document.getElementById('layout-btn').classList.toggle('active', layoutDebug.visible);
+        log('Layout debug: ' + (layoutDebug.visible ? 'ON' : 'OFF'));
+      };
+
+      // Log available motions
+      const motionGroups = model.internalModel?.settings?.motions;
+      if (motionGroups) {
+        log('Motion groups: ' + Object.keys(motionGroups).join(', '));
+      }
+
+      // Hit test
+      model.on('hit', (hitAreas) => {
+        log('Hit: ' + hitAreas.join(', '));
+        model.motion('TapBody');
+      });
+
+      window.addEventListener('resize', () => {
+        app.renderer.resize(window.innerWidth, window.innerHeight);
+        layoutBackground();
+        layoutModel();
+        layoutForeground();
+        initRain();
+      });
+
+      // Hook DIRECTLY into the model's update method to apply overrides
+      // AFTER motions, physics, and everything else have run
+      const origUpdate = model.internalModel.updateWebGLContext?.bind(model.internalModel) 
+        || model.internalModel.update?.bind(model.internalModel);
+      
+      // Patch the coreModel's update to inject our overrides right before rendering
+      const coreModel = model.internalModel.coreModel;
+      const origCoreUpdate = coreModel.update.bind(coreModel);
+      coreModel.update = function() {
+        // Apply persistent parameter overrides BEFORE the core update commits them
+        for (const [id, value] of Object.entries(paramOverrides)) {
+          try { coreModel.setParameterValueById(id, value); } catch(e) {}
+        }
+        // Apply lip sync
+        if (lipSyncActive) {
+          lipSyncPhase += 0.15;
+          const value = Math.abs(Math.sin(lipSyncPhase)) * 0.6 + Math.random() * 0.2;
+          try { coreModel.setParameterValueById('ParamMouthOpenY', value); } catch(e) {}
+        }
+        // Now commit everything
+        origCoreUpdate();
+      };
+
+      document.getElementById('state-label').textContent = 'State: idle';
+      log('Avatar ready! Click model or use controls above.');
+
+      // Phase 5: WebSocket
+      connectWebSocket();
+    }
+
+    // ── States ──
+    window.setState = function(name) {
+      currentState = name;
+      document.getElementById('state-label').textContent = 'State: ' + name;
+      document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+      document.querySelector(`button[onclick="setState('${name}')"]`)?.classList.add('active');
+
+      if (!model?.internalModel?.coreModel) return;
+
+      // Clear all overrides
+      paramOverrides = {};
+      lipSyncActive = false;
+
+      switch(name) {
+        case 'idle':
+          // Let Idle motion run naturally, subtle gentle sway
+          model.motion('Idle');
+          paramOverrides = {
+            ParamMouthForm: 0.1, // slight smile
+          };
+          break;
+
+        case 'thinking':
+          // Stop motions — thinking is still and focused
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamAngleX: 10,
+            ParamAngleY: -5,
+            ParamAngleZ: -3,
+            ParamEyeBallX: -0.4,
+            ParamEyeBallY: 0.2,
+            ParamBrowLY: 0.4,
+            ParamBrowRY: 0.4,
+            ParamMouthForm: -0.2,
+            ParamBodyAngleX: 5,
+          };
+          // Slow subtle idle sway
+          let thinkPhase = 0;
+          const thinkInterval = setInterval(() => {
+            if (currentState !== 'thinking') { clearInterval(thinkInterval); return; }
+            thinkPhase += 0.02;
+            paramOverrides.ParamBreath = (Math.sin(thinkPhase) + 1) * 0.3;
+            // Subtle eye drift while thinking
+            paramOverrides.ParamEyeBallX = -0.4 + Math.sin(thinkPhase * 0.7) * 0.15;
+          }, 50);
+          break;
+
+        case 'speaking':
+          // Idle motion for body animation, lip sync drives mouth
+          model.internalModel.motionManager.stopAllMotions();
+          lipSyncActive = true;
+          lipSyncPhase = 0;
+          paramOverrides = {
+            ParamMouthForm: 0.2,
+          };
+          // Animated head movement while talking
+          let speakPhase = 0;
+          const speakInterval = setInterval(() => {
+            if (currentState !== 'speaking') { clearInterval(speakInterval); return; }
+            speakPhase += 0.04;
+            paramOverrides.ParamAngleX = Math.sin(speakPhase * 0.8) * 5;
+            paramOverrides.ParamAngleY = Math.sin(speakPhase * 0.5) * 3;
+            paramOverrides.ParamBodyAngleX = Math.sin(speakPhase * 0.6) * 2;
+            paramOverrides.ParamBreath = (Math.sin(speakPhase) + 1) * 0.4;
+            paramOverrides.ParamBrowLY = Math.sin(speakPhase * 1.2) * 0.2;
+            paramOverrides.ParamBrowRY = Math.sin(speakPhase * 1.2) * 0.2;
+          }, 50);
+          break;
+
+        case 'sleeping':
+          // Stop all motions — sleeping body should be still
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 0,
+            ParamEyeROpen: 0,
+            ParamAngleY: 12,
+            ParamAngleZ: 8,
+            ParamAngleX: 3,
+            ParamMouthOpenY: 0,
+            ParamMouthForm: 0,
+            ParamBodyAngleX: -3,
+            ParamBreath: 0,
+          };
+          // Slow breathing
+          let breathPhase = 0;
+          const breathInterval = setInterval(() => {
+            if (currentState !== 'sleeping') { clearInterval(breathInterval); return; }
+            breathPhase += 0.03;
+            paramOverrides.ParamBreath = (Math.sin(breathPhase) + 1) * 0.3;
+          }, 50);
+          break;
+
+        case 'waving':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamMouthForm: 4,
+            ParamMouthOpenY: 1.5,
+            ParamEyeLSmile: 5,
+            ParamEyeRSmile: 5,
+            ParamEyeLOpen: 6,
+            ParamEyeROpen: 6,
+            ParamAngleX: -5,
+            ParamAngleZ: -3,
+            ParamBodyAngleX: -3,
+          };
+          let wavePhase = 0;
+          const waveInt = setInterval(() => {
+            if (currentState !== 'waving') { clearInterval(waveInt); return; }
+            wavePhase += 0.12;
+            // Right arm out + wrist wave
+            paramOverrides.ParamArmRB = 3.5 + Math.sin(wavePhase * 2) * 1.5;
+            paramOverrides.ParamHandAngleR = 2 + Math.sin(wavePhase * 3) * 3;
+            // Cheerful head bob
+            paramOverrides.ParamAngleZ = -3 + Math.sin(wavePhase) * 5;
+            paramOverrides.ParamBreath = (Math.sin(wavePhase * 0.5) + 1) * 3;
+          }, 50);
+          break;
+
+        case 'excited':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 8,      // wide open (max ~8)
+            ParamEyeROpen: 8,
+            ParamMouthForm: 5,     // big smile (range -1 to 6)
+            ParamMouthOpenY: 3,    // open mouth
+            ParamBrowLY: 5,        // raised brows (range -1 to 10)
+            ParamBrowRY: 5,
+            ParamEyeBallY: -2,
+          };
+          let excitePhase = 0;
+          const exciteInt = setInterval(() => {
+            if (currentState !== 'excited') { clearInterval(exciteInt); return; }
+            excitePhase += 0.12;
+            paramOverrides.ParamAngleZ = Math.sin(excitePhase) * 15;
+            paramOverrides.ParamAngleY = Math.sin(excitePhase * 1.5) * 10;
+            paramOverrides.ParamBodyAngleX = Math.sin(excitePhase * 0.8) * 8;
+            paramOverrides.ParamBodyAngleZ = Math.sin(excitePhase * 1.2) * 5;
+            paramOverrides.ParamBreath = (Math.sin(excitePhase * 2) + 1) * 4;
+            paramOverrides.ParamArmLB = 2 + Math.sin(excitePhase * 1.5) * 2; // arms out
+            paramOverrides.ParamArmRB = 2 + Math.sin(excitePhase * 1.3) * 2;
+          }, 50);
+          break;
+
+        case 'sad':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 3,       // half open
+            ParamEyeROpen: 3,
+            ParamMouthForm: -1,     // full frown
+            ParamBrowLY: -5,        // brows down
+            ParamBrowRY: -5,
+            ParamBrowLAngle: -5,
+            ParamBrowRAngle: -5,
+            ParamAngleY: 15,        // head drooped
+            ParamAngleZ: 8,
+            ParamAngleX: 8,
+            ParamBodyAngleX: 5,
+            ParamEyeBallY: 4,       // looking down
+            ParamArmLA: 2,          // arms inward (self-comfort)
+            ParamArmRA: 2,
+          };
+          let sadPhase = 0;
+          const sadInt = setInterval(() => {
+            if (currentState !== 'sad') { clearInterval(sadInt); return; }
+            sadPhase += 0.02;
+            paramOverrides.ParamBreath = (Math.sin(sadPhase) + 1) * 2;
+            paramOverrides.ParamAngleZ = 8 + Math.sin(sadPhase * 0.5) * 3;
+          }, 50);
+          break;
+
+        case 'embarrassed':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamTere: 8,          // heavy blush! (range 0-10)
+            ParamEyeLOpen: 4,
+            ParamEyeROpen: 4,
+            ParamEyeLSmile: 4,
+            ParamEyeRSmile: 4,
+            ParamMouthForm: 2,
+            ParamMouthOpenY: 0.5,
+            ParamAngleX: -15,      // looking away
+            ParamAngleY: 8,
+            ParamAngleZ: -8,
+            ParamEyeBallX: 5,      // eyes shifted (range -10 to 10)
+            ParamEyeBallY: 3,
+            ParamBodyAngleX: -7,
+          };
+          let embarPhase = 0;
+          const embarInt = setInterval(() => {
+            if (currentState !== 'embarrassed') { clearInterval(embarInt); return; }
+            embarPhase += 0.03;
+            paramOverrides.ParamBreath = (Math.sin(embarPhase) + 1) * 2;
+            paramOverrides.ParamEyeBallX = 5 + Math.sin(embarPhase * 2) * 3;
+          }, 50);
+          break;
+
+        case 'suspicious':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 2,       // squinting
+            ParamEyeROpen: 5,       // one eye more open
+            ParamMouthForm: -0.5,
+            ParamBrowLY: -3,        // one brow down
+            ParamBrowRY: 5,         // one brow up
+            ParamBrowLAngle: 5,
+            ParamAngleX: -10,
+            ParamAngleY: -5,
+            ParamAngleZ: -5,
+            ParamEyeBallX: 5,
+            ParamEyeBallY: -2,
+            ParamBodyAngleX: -6,
+          };
+          let suspPhase = 0;
+          const suspInt = setInterval(() => {
+            if (currentState !== 'suspicious') { clearInterval(suspInt); return; }
+            suspPhase += 0.015;
+            paramOverrides.ParamBreath = (Math.sin(suspPhase) + 1) * 1.5;
+            paramOverrides.ParamEyeBallX = 5 + Math.sin(suspPhase) * 3;
+          }, 50);
+          break;
+
+        case 'crying':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamTear: 8,          // tears! (range 0-10)
+            ParamEyeLOpen: 2,
+            ParamEyeROpen: 2,
+            ParamEyeLSmile: 7,     // squeeze eyes
+            ParamEyeRSmile: 7,
+            ParamMouthForm: -1,    // full frown
+            ParamMouthOpenY: 3,
+            ParamBrowLY: -5,
+            ParamBrowRY: -5,
+            ParamBrowLAngle: -7,
+            ParamBrowRAngle: -7,
+            ParamAngleY: 15,
+            ParamAngleZ: 5,
+            ParamBodyAngleX: 3,
+            ParamArmLA: 3,         // arms inward
+            ParamArmRA: 3,
+          };
+          let cryPhase = 0;
+          const cryInt = setInterval(() => {
+            if (currentState !== 'crying') { clearInterval(cryInt); return; }
+            cryPhase += 0.06;
+            paramOverrides.ParamBreath = (Math.sin(cryPhase * 3) + 1) * 4;
+            paramOverrides.ParamAngleY = 15 + Math.sin(cryPhase * 2) * 5;
+            paramOverrides.ParamBodyAngleZ = Math.sin(cryPhase * 2.5) * 4;
+            paramOverrides.ParamMouthOpenY = 2 + Math.abs(Math.sin(cryPhase * 2)) * 3;
+          }, 50);
+          break;
+
+        case 'flirty':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamTere: 4,          // slight blush
+            ParamEyeLOpen: 5,
+            ParamEyeROpen: 7,
+            ParamEyeLSmile: 5,
+            ParamEyeRSmile: 2,
+            ParamMouthForm: 4,     // sly smile
+            ParamAngleX: 12,
+            ParamAngleY: -5,
+            ParamAngleZ: 8,
+            ParamEyeBallX: -3,
+            ParamEyeBallY: -1,
+            ParamBodyAngleX: 7,
+            ParamBodyAngleZ: 4,
+          };
+          let flirtPhase = 0;
+          const flirtInt = setInterval(() => {
+            if (currentState !== 'flirty') { clearInterval(flirtInt); return; }
+            flirtPhase += 0.03;
+            paramOverrides.ParamBreath = (Math.sin(flirtPhase) + 1) * 2.5;
+            paramOverrides.ParamAngleZ = 8 + Math.sin(flirtPhase * 0.8) * 5;
+            // Slow wink cycle
+            paramOverrides.ParamEyeLOpen = 5 - Math.max(0, Math.sin(flirtPhase * 0.4)) * 5;
+          }, 50);
+          break;
+
+        case 'bored':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 3,      // droopy eyes
+            ParamEyeROpen: 3,
+            ParamMouthForm: -0.5,
+            ParamBrowLY: -2,
+            ParamBrowRY: -2,
+            ParamAngleY: 8,
+            ParamAngleX: 15,       // head turned away
+            ParamEyeBallX: 6,
+            ParamEyeBallY: 3,
+            ParamBodyAngleX: 8,
+            ParamBodyAngleZ: 4,
+          };
+          let boredPhase = 0;
+          const boredInt = setInterval(() => {
+            if (currentState !== 'bored') { clearInterval(boredInt); return; }
+            boredPhase += 0.015;
+            paramOverrides.ParamBreath = (Math.sin(boredPhase) + 1) * 2;
+            paramOverrides.ParamEyeBallX = 6 + Math.sin(boredPhase * 0.3) * 4;
+            const blinkCycle = Math.sin(boredPhase * 0.5);
+            if (blinkCycle > 0.95) {
+              paramOverrides.ParamEyeLOpen = 0;
+              paramOverrides.ParamEyeROpen = 0;
+            } else {
+              paramOverrides.ParamEyeLOpen = 3;
+              paramOverrides.ParamEyeROpen = 3;
+            }
+          }, 50);
+          break;
+
+        case 'shocked':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 8,       // max wide
+            ParamEyeROpen: 8,
+            ParamEyeBallForm: 8,    // pupils shrink (range -1 to 10)
+            ParamMouthForm: 0,
+            ParamMouthOpenY: 5,     // jaw dropped
+            ParamBrowLY: 8,         // brows way up
+            ParamBrowRY: 8,
+            ParamAngleY: -8,
+            ParamBodyAngleY: -5,
+          };
+          // Initial jolt then settle into frozen shock
+          let shockPhase = 0;
+          const shockInt = setInterval(() => {
+            if (currentState !== 'shocked') { clearInterval(shockInt); return; }
+            shockPhase += 0.1;
+            if (shockPhase < 2) {
+              // Trembling
+              paramOverrides.ParamAngleX = Math.random() * 4 - 2;
+              paramOverrides.ParamAngleZ = Math.random() * 3 - 1.5;
+              paramOverrides.ParamBodyAngleX = Math.random() * 3 - 1.5;
+            } else {
+              // Frozen
+              paramOverrides.ParamAngleX = 0;
+              paramOverrides.ParamAngleZ = 0;
+              paramOverrides.ParamBodyAngleX = 0;
+              paramOverrides.ParamBreath = (Math.sin(shockPhase * 0.3) + 1) * 0.15;
+            }
+          }, 50);
+          break;
+
+        case 'laughing':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 1,       // squinted shut
+            ParamEyeROpen: 1,
+            ParamEyeLSmile: 10,     // max smile eyes
+            ParamEyeRSmile: 10,
+            ParamMouthForm: 6,      // max smile
+            ParamBrowLY: 3,
+            ParamBrowRY: 3,
+          };
+          let laughPhase = 0;
+          const laughInt = setInterval(() => {
+            if (currentState !== 'laughing') { clearInterval(laughInt); return; }
+            laughPhase += 0.15;
+            paramOverrides.ParamMouthOpenY = 2 + Math.abs(Math.sin(laughPhase * 2)) * 4;
+            paramOverrides.ParamAngleZ = Math.sin(laughPhase) * 12;
+            paramOverrides.ParamAngleY = Math.sin(laughPhase * 1.5) * 8;
+            paramOverrides.ParamBodyAngleX = Math.sin(laughPhase * 0.8) * 7;
+            paramOverrides.ParamBodyAngleZ = Math.sin(laughPhase * 1.3) * 5;
+            paramOverrides.ParamBreath = (Math.sin(laughPhase * 3) + 1) * 4;
+            paramOverrides.ParamArmLA = 1 + Math.sin(laughPhase) * 2;
+            paramOverrides.ParamArmRA = 1 + Math.sin(laughPhase * 1.2) * 2;
+          }, 50);
+          break;
+
+        case 'listening':
+          model.internalModel.motionManager.stopAllMotions();
+          paramOverrides = {
+            ParamEyeLOpen: 7,
+            ParamEyeROpen: 7,
+            ParamMouthForm: 1,
+            ParamAngleX: -5,
+            ParamAngleY: -3,
+            ParamAngleZ: 5,
+            ParamBodyAngleX: -3,
+            ParamBrowLY: 2,         // slightly raised — attentive
+            ParamBrowRY: 2,
+          };
+          let listenPhase = 0;
+          const listenInt = setInterval(() => {
+            if (currentState !== 'listening') { clearInterval(listenInt); return; }
+            listenPhase += 0.02;
+            paramOverrides.ParamBreath = (Math.sin(listenPhase) + 1) * 2;
+            paramOverrides.ParamAngleY = -3 + Math.sin(listenPhase * 0.8) * 5;
+            paramOverrides.ParamEyeBallX = Math.sin(listenPhase * 0.5) * 2;
+          }, 50);
+          break;
+      }
+      log('State → ' + name);
+    };
+
+    // ── Lip Sync ──
+    window.toggleLipSync = function() {
+      lipSyncActive = !lipSyncActive;
+      if (lipSyncActive) lipSyncPhase = 0;
+      log('Lip sync: ' + (lipSyncActive ? 'ON' : 'OFF'));
+    };
+
+    // ── Expressions & Motions ──
+    window.playExpression = function(idx) {
+      if (!model) return;
+      try { model.expression(idx); log('Expression ' + idx); } catch(e) { log('Expr error: ' + e.message); }
+    };
+
+    window.playRandomMotion = function() {
+      if (!model) return;
+      try { model.motion('TapBody'); log('Random motion'); } catch(e) { log('Motion error: ' + e.message); }
+    };
+
+    // ── WebSocket (Phase 5) ──
+    function connectWebSocket() {
+      const statusEl = document.getElementById('ws-status');
+      try {
+        const ws = new WebSocket('ws://127.0.0.1:18789/ws');
+        ws.onopen = () => { statusEl.textContent = 'WS: connected'; statusEl.style.color = '#4ade80'; };
+        ws.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'state' && data.state) setState(data.state);
+            if (data.type === 'expression') playExpression(parseInt(data.name) || 0);
+            log('WS: ' + JSON.stringify(data));
+          } catch(err) {}
+        };
+        ws.onclose = () => { statusEl.textContent = 'WS: off (Phase 5)'; statusEl.style.color = '#666'; };
+        ws.onerror = () => { statusEl.textContent = 'WS: error'; statusEl.style.color = '#f87171'; };
+      } catch(e) {
+        statusEl.textContent = 'WS: unavailable';
+      }
+    }
+
+    init().catch(e => log('Init error: ' + e.message));
+
+    // Auto-reload: poll the HTML file for changes every 2s
+    (async function autoReload() {
+      let lastContent = null;
+      while (true) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const resp = await fetch('/index.html?_t=' + Date.now());
+          const text = await resp.text();
+          if (lastContent === null) { lastContent = text; continue; }
+          if (text !== lastContent) { location.reload(); return; }
+        } catch(e) {}
+      }
+    })();
+  </script>
+</body>
+</html>
