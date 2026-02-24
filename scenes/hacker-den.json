@@ -27,13 +27,13 @@
       "notes": "Haru — Live2D render-to-texture"
     },
     {
-      "name": "desk",
-      "texture": "bg-hacker-desk.png",
+      "name": "monitor-frame",
+      "texture": "bg-hacker-monitor-frame.png",
       "z": 3,
-      "y": -0.3,
+      "y": 0.5,
       "opacity": 1.0,
       "transparent": true,
-      "notes": "Foreground desk with keyboard, energy drinks, cables"
+      "notes": "CRT monitor bezel — viewer looks through the screen at Haru"
     }
   ],
   "effects": {
