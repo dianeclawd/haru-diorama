@@ -97,8 +97,16 @@
       position: fixed; bottom: 48px; right: 12px; z-index: 200;
       font: 11px monospace; color: #666;
     }
+    /* Terminal mode toggle */
+    #terminal-mode-toggle {
+      position: fixed; top: 10px; left: 550px; z-index: 101;
+      padding: 4px 8px; font: 12px monospace;
+      background: #222; color: #3f3; border: 1px solid #353;
+      border-radius: 3px; cursor: pointer;
+    }
+    #terminal-mode-toggle:hover { background: #333; }
   </style>
-  <script type="module" crossorigin src="/haru-diorama/assets/diorama-B3iWsW1B.js"></script>
+  <script type="module" crossorigin src="/haru-diorama/assets/diorama-D1mvO9K2.js"></script>
 </head>
 <body>
   <a href="index.html" style="position:fixed;top:40px;right:10px;z-index:100;padding:4px 12px;font-size:12px;background:#335;color:#8af;border:1px solid #558;border-radius:3px;text-decoration:none;font-family:monospace;cursor:pointer">← Live2D</a>
@@ -115,6 +123,7 @@
     <div id="terminal-content" style="width:100%;height:100%;overflow:hidden;padding:4px;box-sizing:border-box"></div>
     <div id="terminal-scanlines" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,0.15) 0px,rgba(0,0,0,0.15) 1px,transparent 1px,transparent 3px)"></div>
   </div>
+  <button id="terminal-mode-toggle" onclick="toggleTerminalMode()">Terminal: HTML</button>
   <select id="scene-select" style="position:fixed;top:10px;left:350px;z-index:101;padding:4px 8px;font:12px monospace;background:#222;color:#8af;border:1px solid #558;border-radius:3px;cursor:pointer"></select>
   <div id="layer-panel"></div>
   <div id="controls">
