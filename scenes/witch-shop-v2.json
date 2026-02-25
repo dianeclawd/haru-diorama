@@ -1,0 +1,71 @@
+{
+  "name": "Witch's Potion Shop v2",
+  "description": "Animation-first layered witch shop — magenta-keyed windows, empty cauldron ready for smoke particles.",
+  "created": "2026-02-24",
+  "camera": {
+    "fov": 45,
+    "position": [0, 0.5, 6]
+  },
+  "layers": [
+    {
+      "name": "exterior",
+      "texture": "bg-witch-exterior-v2.png",
+      "z": -1,
+      "y": 0.5,
+      "opacity": 1.0,
+      "transparent": false
+    },
+    {
+      "name": "background",
+      "texture": "bg-witch-layered-cutout.png",
+      "z": 0,
+      "y": 0.5,
+      "opacity": 1.0,
+      "transparent": true,
+      "notes": "Interior with magenta-keyed window panes cut to transparent"
+    },
+    {
+      "name": "character",
+      "type": "live2d",
+      "model": "models/Haru/Haru.model3.json",
+      "z": 2,
+      "y": 0.5,
+      "width": 2.2,
+      "height": 3.3,
+      "notes": "Haru — Live2D render-to-texture"
+    },
+    {
+      "name": "counter",
+      "texture": "bg-witch-counter-v2.png",
+      "z": 3,
+      "y": 0.8,
+      "opacity": 1.0,
+      "transparent": true,
+      "notes": "Foreground apothecary counter with spellbook, candle, crystal ball"
+    }
+  ],
+  "effects": {
+    "rain": {
+      "enabled": true,
+      "count": 300,
+      "color": "0x88aacc",
+      "size": 0.03,
+      "opacity": 0.4,
+      "speed": [0.02, 0.05],
+      "wind": 0.1
+    }
+  },
+  "assets": {
+    "base_with_magenta": "bg-witch-layered-base.png",
+    "background_cutout": "bg-witch-layered-cutout.png",
+    "exterior": "bg-witch-exterior-v2.png",
+    "counter": "bg-witch-counter-v2.png"
+  },
+  "layout": {
+    "notes": "Animation-first pipeline: magenta-keyed windows for clean cutout, empty cauldron for smoke particles",
+    "window_magenta_bounds": {
+      "x_min": 1114, "x_max": 1372,
+      "y_min": 211, "y_max": 691
+    }
+  }
+}
