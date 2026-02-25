@@ -42,6 +42,61 @@
       "opacity": 1.0,
       "transparent": true,
       "notes": "Bare foreground counter — items added as separate overlays"
+    },
+    {
+      "name": "prop-spellbook",
+      "texture": "prop-spellbook.png",
+      "z": 3.05,
+      "x": -1.2,
+      "y": 0.55,
+      "width": 0.5,
+      "height": 0.5,
+      "transparent": true,
+      "notes": "Open spellbook on left side of counter"
+    },
+    {
+      "name": "prop-candle",
+      "texture": "prop-candle.png",
+      "z": 3.05,
+      "x": -0.5,
+      "y": 0.7,
+      "width": 0.4,
+      "height": 0.4,
+      "transparent": true,
+      "notes": "Brass candle holder with lit candle"
+    },
+    {
+      "name": "prop-crystal-ball",
+      "texture": "prop-crystal-ball.png",
+      "z": 3.05,
+      "x": 0.4,
+      "y": 0.6,
+      "width": 0.45,
+      "height": 0.45,
+      "transparent": true,
+      "notes": "Crystal ball on claw stand"
+    },
+    {
+      "name": "prop-potions",
+      "texture": "prop-potions.png",
+      "z": 3.05,
+      "x": 1.1,
+      "y": 0.55,
+      "width": 0.45,
+      "height": 0.45,
+      "transparent": true,
+      "notes": "Cluster of 4 potion bottles"
+    },
+    {
+      "name": "prop-mortar",
+      "texture": "prop-mortar.png",
+      "z": 3.05,
+      "x": 1.7,
+      "y": 0.5,
+      "width": 0.35,
+      "height": 0.35,
+      "transparent": true,
+      "notes": "Stone mortar and pestle with herbs"
     }
   ],
   "effects": {
